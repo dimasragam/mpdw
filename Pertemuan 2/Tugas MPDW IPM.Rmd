@@ -1,0 +1,148 @@
+---
+title: "Tugas Kuliah MPDW"
+author: "Dimas Ragamulia M0401231901"
+date: "2025-09-02"
+output: html_document
+---
+
+# library
+```{r}
+library(lmtest) 
+library(orcutt) 
+library(HoRM)
+library(readxl)
+```
+
+# impor data
+```{r}
+data <- read_excel("C:/Users/DELL Inspiron/Pictures/Data IPM Jabar.xlsx")
+data
+
+data1 <- subset(data, select = -c(id, kode_provinsi, nama_provinsi, satuan))
+data1
+```
+
+# membuat model awal
+```{r}
+model_awal <- lm(indeks_pembangunan_manusia ~ tahun, data = data1)
+summary(model_awal)
+```
+~ nilai R-squared sangat tinggi (0.9908) dan koefisien tahun sangat signifikan (p-value < 0.001)
+
+# diagnosis (sisaan)
+
+## diagnosis visual
+```{r}
+# Ambil sisaan dari model
+sisaan_awal <- residuals(model_awal)
+
+# Plot sisaan terhadap waktu
+plot(data1$tahun, sisaan_awal, type="o", pch=20, col="red",
+     main="Plot Sisaan vs Waktu", xlab="Tahun", ylab="Sisaan")
+abline(h=0, lty=2) # Garis referensi di y=0
+```
+
+## diagnosis formal (uji durbin-watson)
+```{r}
+dwtest(model_awal)
+```
+~ p-value yg dihasilkan sangat kecil (0.0001574) < 0.05
+~ tolak h0, terdapat autokorelasi
+
+# penanganan
+
+## metode cochrane-orcutt
+```{r}
+model_co <- cochrane.orcutt(model_awal)
+summary(model_co)
+
+# rho paling optimum
+rho <- model_co$rho
+cat("Rho optimum:", rho)
+```
+~ statistik d-w test baru, nilainya jauh lebih dekat ke 2 dan p-valuenya (>0.05) yg menunjukan autokorelasi sudah berhasil diatasi
+
+## verifikasi manual
+```{r}
+ipm.trans <- data1$indeks_pembangunan_manusia[-1] - data1$indeks_pembangunan_manusia[-15]*rho
+
+tahun.trans <- data1$tahun[-1] - data1$tahun[-15]*rho
+model_co_manual <- lm(ipm.trans~tahun.trans)
+
+b0_co_manual <- coef(model_co_manual)[1]/(1-rho)
+b1_co_manual <- coef(model_co_manual)[2]
+cat("Koefisien manual Cochrane-Orcutt:\n")
+b0_co_manual
+b1_co_manual
+```
+~ hasil koefisien manual sangat mirip dengan hasil dari fungsi otomatis
+
+## metode hildreth-lu
+```{r}
+#Penanganan Autokorelasi Hildreth lu
+# Hildreth-Lu
+hildreth.lu.func<- function(r, model){
+  x <- model.matrix(model)[,-1]
+  y <- model.response(model.frame(model))
+  n <- length(y)
+  t <- 2:n
+  y <- y[t]-r*y[t-1]
+  x <- x[t]-r*x[t-1]
+  
+  return(lm(y~x))
+}
+
+#Pencariab rho yang meminimumkan SSE
+r <- c(seq(0.1,0.9, by= 0.1))
+tab <- data.frame("rho" = r, "SSE" = sapply(r, function(i){deviance(hildreth.lu.func(i, model_awal))}))
+round(tab, 4)
+```
+~ rho yg menghasilkan sse minimum adalah (0.7) dicoba cari kembali untuk ketelitian yg lebih
+
+```{r}
+#Rho optimal di sekitar 0.4
+rOpt <- seq(0.6,0.9, by= 0.001)
+tabOpt <- data.frame("rho" = rOpt, "SSE" = sapply(rOpt, function(i){deviance(hildreth.lu.func(i, model_awal))}))
+head(tabOpt[order(tabOpt$SSE),])
+```
+~ didapatkan rho minimum senilai (0.656) dan sse senilai (0.3955105)
+
+```{r}
+#Grafik SSE optimum
+par(mfrow = c(1,1))
+plot(tab$SSE ~ tab$rho , type = "l", xlab = "Rho", ylab = "SSE")
+abline(v = tabOpt[tabOpt$SSE==min(tabOpt$SSE),"rho"], lty = 2, col="red",lwd=2)
+text(x=0.6561, y=0.3955105	, labels = "rho=0.6561", cex = 0.8)
+```
+
+```{r}
+model_hl <- hildreth.lu(data1$indeks_pembangunan_manusia, data1$tahun, rho = 0.6561)
+summary(model_hl)
+
+#Transformasi Balik
+cat("y = ", coef(model_hl)[1]/(1-0.6561), "+", coef(model_hl)[2],"x", sep = "")
+
+#Deteksi autokorelasi
+dwtest(model_hl)
+```
+~ hasil summary memberikan model akhir yg jg sudah sehat dengan statistik d-w yg sudah membaik
+
+# evaluasi akhir
+```{r}
+# Menghitung SSE untuk setiap model secara manual
+sse_awal <- sum(residuals(model_awal)^2)
+sse_co <- sum(residuals(model_co)^2)
+sse_hl <- sum(residuals(model_hl)^2)
+
+# Membuat tabel perbandingan
+data.frame(
+  Metode = c("Model Awal (Sakit)", "Cochrane-Orcutt (Sehat)", "Hildreth-Lu (Sehat)"),
+  SSE = c(sse_awal, sse_co, sse_hl),
+  DW_Statistic = c(dwtest(model_awal)$statistic, model_co$DW[3], dwtest(model_hl)$statistic)
+)
+```
+~ Baik metode Cochrane-Orcutt maupun Hildreth-Lu berhasil menurunkan SSE model, artinya model yang baru lebih akurat.
+
+~ Keduanya juga berhasil menghilangkan autokorelasi, yang ditunjukkan oleh statistik D-W yang mendekati 2.
+
+~ Model akhir yang seharusnya kita gunakan adalah salah satu dari model yang telah ditangani, karena estimasi koefisien dan uji signifikansinya sekarang jauh lebih dapat dipercaya.
