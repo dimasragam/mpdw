@@ -1,0 +1,94 @@
+---
+title: "Tugas Kestationeran"
+author: "Dimas Ragamulia M0401231901"
+date: "2025-09-29"
+output: html_document
+---
+
+# Library
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(readxl)
+```
+
+# Impor Data
+
+```{r}
+data <- read_excel("C:/Users/DELL Inspiron/Downloads/data google mpdw.xlsx")
+data1 <- data[401:600, ]
+data1.ts <- ts(data1$AI_Revenue_USD_Mn)
+data1
+```
+
+# Plot Time Series
+
+```{r}
+ts.plot(data1.ts, xlab = "Date", ylab = "Revenue", 
+        main = "Time Series Plot",
+        ylim = c(127.5,130.5))
+points(data1.ts)
+```
+
+```{r}
+data1.ts |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Date") + ylab("Revenue")
+```
+
+Data deret waktu terlihat **berfluktuasi dalam rentang sempit (128–130)** tanpa tren jelas. Polanya cenderung **stasioner di sekitar rata-rata**, sehingga **tidak diperlukan pemangkasan data**.
+
+```{r}
+lattice::densityplot(as.vector(data1.ts))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (129) dan stasioner dalam ragam, ditandai dengan lebar pita yang cenderung sama.
+
+# Plot ACF
+
+```{r}
+acf(data1.ts)
+```
+
+Data tidak menunjukkan autokorelasi yang kuat, sehingga cenderung menyerupai white noise. Dengan kata lain, nilai data antarperiode tidak saling berkorelasi secara signifikan.
+
+# Uji ADF
+
+```{r}
+adf.test(data1.ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat p-value sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+# Plot Box-Cox
+
+```{r}
+index <- seq(1:200)
+
+# Box-Cox
+bc <- boxcox(
+  data1.ts ~ index,
+  lambda = seq(-1, 4, by = 0.01)
+)
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+```
+
+Berdasarkan hasil uji Box-Cox, kurva log-likelihood terhadap `λ` tampak relatif datar tanpa menunjukkan puncak yang jelas. Hal ini mengindikasikan bahwa model regresi dengan data asli sudah stabil dan tidak memerlukan transformasi Box-Cox tambahan
+
+# Kesimpulan
+
+Secara keseluruhan, data dapat dianggap stasioner baik dalam rataan maupun ragam, serta tidak menunjukkan autokorelasi yang berarti. Oleh karena itu, tidak diperlukan transformasi tambahan seperti Box-Cox. Data sudah siap digunakan langsung untuk analisis pemodelan lanjutan (misalnya ARIMA atau metode time series lainnya).
